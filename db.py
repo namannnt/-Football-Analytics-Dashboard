@@ -55,3 +55,13 @@ def refresh_stored_procedures(**_context) -> None:
 def query(sql: str, parameters: dict | None = None) -> pd.DataFrame:
     with engine().connect() as connection:
         return pd.read_sql_query(text(sql), connection, params=parameters or {})
+
+
+def read_table_if_exists(qualified_name: str) -> pd.DataFrame:
+    if not qualified_name.startswith("analytics.") or not qualified_name.replace("analytics.", "").isidentifier():
+        raise ValueError("Only analytics schema tables may be read")
+    with engine().connect() as connection:
+        exists = connection.execute(text("SELECT to_regclass(:name)"), {"name": qualified_name}).scalar()
+        if exists is None:
+            return pd.DataFrame()
+        return pd.read_sql_query(text(f"SELECT * FROM {qualified_name}"), connection)

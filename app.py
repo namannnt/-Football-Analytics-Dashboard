@@ -4,7 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from charts import pacing_trend
-from db import query
+from db import query, read_table_if_exists
 from excel_export import build_excel
 from export import build_pdf
 from insights import generate_takeaways
@@ -21,11 +21,12 @@ def load_data():
     standings = query("SELECT * FROM analytics.weekly_standings ORDER BY season, matchday, standing")
     pace = query("SELECT * FROM analytics.rolling_pace ORDER BY season, matchday, team")
     anomalies = query("SELECT * FROM analytics.anomaly_flags ORDER BY flagged_at DESC")
-    return standings, pace, anomalies
+    predictions = read_table_if_exists("analytics.team_pace_predictions")
+    return standings, pace, anomalies, predictions
 
 
 try:
-    standings, pace, anomalies = load_data()
+    standings, pace, anomalies, predictions = load_data()
 except Exception as error:
     st.error("The PostgreSQL serving layer is not ready. Run the Airflow pipeline and check DATABASE_URL.")
     st.exception(error)
@@ -47,6 +48,20 @@ st.dataframe(
     hide_index=True,
 )
 st.plotly_chart(pacing_trend(season_pace), use_container_width=True)
+
+st.subheader("First-half pace predictions")
+season_predictions = predictions[predictions.season == season] if not predictions.empty else predictions
+if season_predictions.empty:
+    st.info("No trained model predictions are available. Train a model manually, then rerun the scoring task.")
+else:
+    latest_prediction_day = season_predictions.matchday.max()
+    st.dataframe(
+        season_predictions[season_predictions.matchday == latest_prediction_day].sort_values(
+            "on_pace_probability", ascending=False
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 takeaways = generate_takeaways(season_standings, season_pace, anomalies)
 st.subheader("Stakeholder takeaways")

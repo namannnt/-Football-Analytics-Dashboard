@@ -34,6 +34,22 @@ LEFT JOIN hive_db.player_rolling_stats p
  AND p.team = s.team
 """
 
+MATCH_QUERY = """
+SELECT
+    season,
+    CAST(matchday AS INT) AS matchday,
+    match_id,
+    kickoff_ts,
+    home_team,
+    away_team,
+    CAST(home_goals AS INT) AS home_goals,
+    CAST(away_goals AS INT) AS away_goals
+FROM hive_db.matches_raw
+WHERE CAST(matchday AS INT) IS NOT NULL
+  AND CAST(home_goals AS INT) IS NOT NULL
+  AND CAST(away_goals AS INT) IS NOT NULL
+"""
+
 
 def spark_session():
     from pyspark.sql import SparkSession
@@ -48,14 +64,19 @@ def spark_session():
 def build_curated(output_path: str | None = None) -> str:
     """Read Hive aggregates, perform the cross-grain join, and stage Parquet."""
     output_path = output_path or os.getenv(
-        "FOOTBALL_CURATED_PATH", "hdfs:///football/curated/team_player_matchday"
+        "FOOTBALL_CURATED_PATH", "hdfs:///football/curated"
     )
     spark = spark_session()
     try:
         curated = spark.sql(CURATED_QUERY).dropDuplicates(
             ["season", "matchday", "team", "match_id", "player_id"]
         )
-        curated.write.mode("overwrite").partitionBy("season").parquet(output_path)
+        curated.write.mode("overwrite").partitionBy("season").parquet(
+            f"{output_path.rstrip('/')}/team_player_matchday"
+        )
+        spark.sql(MATCH_QUERY).dropDuplicates(["season", "match_id"]).write.mode(
+            "overwrite"
+        ).partitionBy("season").parquet(f"{output_path.rstrip('/')}/matches")
     finally:
         spark.stop()
     return output_path
@@ -64,7 +85,7 @@ def build_curated(output_path: str | None = None) -> str:
 def load_to_postgres(input_path: str | None = None) -> None:
     """Publish the staged result through Spark JDBC into the serving layer."""
     input_path = input_path or os.getenv(
-        "FOOTBALL_CURATED_PATH", "hdfs:///football/curated/team_player_matchday"
+        "FOOTBALL_CURATED_PATH", "hdfs:///football/curated"
     )
     from db import initialize_schema
 
@@ -72,17 +93,21 @@ def load_to_postgres(input_path: str | None = None) -> None:
     jdbc_url = os.environ["POSTGRES_JDBC_URL"]
     spark = spark_session()
     try:
-        frame = spark.read.parquet(input_path)
-        (
-            frame.write.format("jdbc")
-            .option("url", jdbc_url)
-            .option("dbtable", "analytics.team_player_matchday")
-            .option("user", os.environ["POSTGRES_USER"])
-            .option("password", os.environ["POSTGRES_PASSWORD"])
-            .option("driver", "org.postgresql.Driver")
-            .mode("overwrite")
-            .save()
-        )
+        tables = {
+            "team_player_matchday": spark.read.parquet(f"{input_path.rstrip('/')}/team_player_matchday"),
+            "matches": spark.read.parquet(f"{input_path.rstrip('/')}/matches"),
+        }
+        for table, frame in tables.items():
+            (
+                frame.write.format("jdbc")
+                .option("url", jdbc_url)
+                .option("dbtable", f"analytics.{table}")
+                .option("user", os.environ["POSTGRES_USER"])
+                .option("password", os.environ["POSTGRES_PASSWORD"])
+                .option("driver", "org.postgresql.Driver")
+                .mode("overwrite")
+                .save()
+            )
     finally:
         spark.stop()
 

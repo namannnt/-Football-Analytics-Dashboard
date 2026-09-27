@@ -20,6 +20,10 @@ SCHEDULE = (
     (("Boreal United", "Atlas FC"), ("Dynamo Rovers", "Comet City")),
     (("Comet City", "Atlas FC"), ("Dynamo Rovers", "Boreal United")),
     (("Dynamo Rovers", "Atlas FC"), ("Comet City", "Boreal United")),
+    (("Atlas FC", "Boreal United"), ("Comet City", "Dynamo Rovers")),
+    (("Atlas FC", "Comet City"), ("Boreal United", "Dynamo Rovers")),
+    (("Atlas FC", "Dynamo Rovers"), ("Boreal United", "Comet City")),
+    (("Boreal United", "Atlas FC"), ("Dynamo Rovers", "Comet City")),
 )
 
 
@@ -42,8 +46,8 @@ def generate() -> tuple[int, int]:
     with matches_path.open("w", encoding="utf-8", newline="") as matches_file, events_path.open(
         "w", encoding="utf-8", newline=""
     ) as events_file:
-        matches = csv.writer(matches_file)
-        events = csv.writer(events_file)
+        matches = csv.writer(matches_file, lineterminator="\n")
+        events = csv.writer(events_file, lineterminator="\n")
         matches.writerow(("season", "matchday", "match_id", "kickoff_ts", "home_team", "away_team", "home_goals", "away_goals"))
         events.writerow(("season", "matchday", "match_id", "player_id", "player_name", "team", "minutes", "goals", "assists", "shots", "tackles", "passes_completed"))
         for season_index, season in enumerate(("2023-demo", "2024-demo", "2025-demo")):

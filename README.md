@@ -67,6 +67,18 @@ The included match CSV has results but no season, date, or matchday fields. Inge
 
 The original single-file prototype remains in [`final.py`](final.py) for comparison.
 
+### Model training and inference
+
+[`ml_dataset.py`](ml_dataset.py) converts fixtures into one observation per team before each kickoff. Form, ELO, opponent ELO, prior matchup record, venue, and season progress use only results available before that fixture. A team is labelled `On-Pace` when it finishes in the top half of its season table, ordered by final points, goal difference, goals scored, and team name.
+
+Training uses first-half observations and holds out the newest season for chronological evaluation:
+
+```bash
+python train_model.py --source demo
+```
+
+The demo evaluation is explicitly marked demonstration-only because it is synthetic and small. Model training is manual and does not run in the serving DAG. After PostgreSQL refresh, Airflow builds current pre-match features and runs inference only when the configured model and metadata artifacts exist; otherwise the scoring task exits successfully with a skipped status. Predictions are written to `analytics.team_pace_predictions` and displayed by Streamlit when available.
+
 ## Configuration
 
 Copy `.env.example` into the environment used by Airflow and Spark. Secrets should come from your orchestrator or secret manager in a real deployment.

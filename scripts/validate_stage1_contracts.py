@@ -35,7 +35,7 @@ def main() -> None:
     with event_path.open(encoding="utf-8", newline="") as handle:
         events = list(csv.DictReader(handle))
     fixtures = {row["match_id"]: {row["home_team"], row["away_team"]} for row in matches}
-    assert len(matches) == 36 and len(events) == 216
+    assert len(matches) == 60 and len(events) == 360
     assert all(row["match_id"] in fixtures and row["team"] in fixtures[row["match_id"]] for row in events)
     appearances = Counter((row["season"], row["player_id"]) for row in events)
     assert min(appearances.values()) >= 5

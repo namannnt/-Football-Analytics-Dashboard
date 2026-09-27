@@ -12,6 +12,8 @@ from airflow.operators.python import PythonOperator
 from anomaly_flagging import run_anomaly_flags
 from db import refresh_stored_procedures
 from ingest_raw_data import ingest_raw_data
+from ml_dataset import build_and_store_ml_features
+from pace_inference import score_pace_model
 
 
 ROOT = Path(__file__).resolve().parent
@@ -82,4 +84,14 @@ with DAG(
         python_callable=run_anomaly_flags,
     )
 
-    ingest >> hive_aggregate >> spark_hive_read >> load_postgres >> refresh >> anomalies
+    ml_features = PythonOperator(
+        task_id="build_ml_features",
+        python_callable=build_and_store_ml_features,
+    )
+
+    pace_predictions = PythonOperator(
+        task_id="score_pace_model",
+        python_callable=score_pace_model,
+    )
+
+    ingest >> hive_aggregate >> spark_hive_read >> load_postgres >> refresh >> anomalies >> ml_features >> pace_predictions
