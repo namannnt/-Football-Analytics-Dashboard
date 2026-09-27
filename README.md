@@ -105,6 +105,29 @@ After the serving tables exist:
 streamlit run app.py
 ```
 
+## Local analytics stack
+
+The local reference environment is intentionally small: one HDFS container runs a NameNode and DataNode, Hive uses a standalone metastore plus HiveServer2, Spark uses one master and worker, PostgreSQL serves the application, and Airflow uses its single-node `standalone` mode. It demonstrates service boundaries and is not a production topology.
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose ps
+```
+
+The first image build downloads the pinned Hadoop, Hive, and Spark clients used by the Airflow task runner. Wait for the health checks, then train the demonstration model manually and trigger the serving DAG:
+
+```bash
+docker compose exec airflow python /opt/airflow/dags/repo/train_model.py --source demo \
+  --model /opt/airflow/dags/repo/artifacts/on_pace.joblib \
+  --metadata /opt/airflow/dags/repo/artifacts/on_pace.metadata.json
+docker compose exec airflow airflow dags trigger football_raw_to_serving
+```
+
+Airflow is exposed at `http://localhost:8088`, Spark at `http://localhost:8080`, HDFS at `http://localhost:9870`, HiveServer2 on port `10000`, PostgreSQL on `5432`, and Streamlit at `http://localhost:8501`.
+
+This repository was developed on a host where Docker was unavailable, so the Compose topology is statically checked in CI but must be runtime-verified on a Docker-capable machine before claiming a distributed end-to-end pass.
+
 ## Source contract
 
 The normalizer accepts common aliases, but the preferred match schema is:

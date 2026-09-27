@@ -18,7 +18,15 @@ from pace_inference import score_pace_model
 
 ROOT = Path(__file__).resolve().parent
 HDFS_ROOT = os.getenv("FOOTBALL_HDFS_RAW_ROOT", "hdfs:///football/raw").rstrip("/")
-SPARK_PACKAGES = os.getenv("FOOTBALL_SPARK_PACKAGES", "org.postgresql:postgresql:42.7.4")
+SPARK_PACKAGES = os.getenv("FOOTBALL_SPARK_PACKAGES", "")
+SPARK_PACKAGES_ARG = f"--packages '{SPARK_PACKAGES}'" if SPARK_PACKAGES else ""
+SPARK_MASTER_URL = os.getenv("SPARK_MASTER_URL", "local[*]")
+HIVE_URL = os.getenv("HIVE_JDBC_URL", "jdbc:hive2://hive-server:10000/default")
+HIVE_VARS = (
+    f"--hivevar football_matches_path='{HDFS_ROOT}/current/matches' "
+    f"--hivevar football_players_path='{HDFS_ROOT}/current/players' "
+    f"--hivevar football_player_stats_path='{HDFS_ROOT}/current/player_match_stats'"
+)
 
 
 default_args = {
@@ -48,20 +56,19 @@ with DAG(
         task_id="hive_batch_aggregate",
         bash_command=(
             f"cd '{ROOT}' && "
-            "beeline -u \"${HIVE_JDBC_URL}\" "
-            f"--hivevar football_matches_path='{HDFS_ROOT}/current/matches' "
-            f"--hivevar football_players_path='{HDFS_ROOT}/current/players' "
-            f"--hivevar football_player_stats_path='{HDFS_ROOT}/current/player_match_stats' "
-            "-f hive_queries.hql"
+            f"beeline -u \"${{HIVE_JDBC_URL}}\" {HIVE_VARS} -f hive_queries/external_raw_tables.hql && "
+            f"beeline -u \"${{HIVE_JDBC_URL}}\" -f hive_queries/match_history_raw.hql && "
+            f"beeline -u \"${{HIVE_JDBC_URL}}\" -f hive_queries/season_standings_raw.hql && "
+            f"beeline -u \"${{HIVE_JDBC_URL}}\" -f hive_queries/player_rolling_stats_raw.hql"
         ),
-        env={"HIVE_JDBC_URL": os.getenv("HIVE_JDBC_URL", "jdbc:hive2://hive-server:10000/default")},
+        env={"HIVE_JDBC_URL": HIVE_URL},
         append_env=True,
     )
 
     spark_hive_read = BashOperator(
         task_id="spark_hive_read",
         bash_command=(
-            f"spark-submit --packages '{SPARK_PACKAGES}' '{ROOT / 'spark_layer.py'}' "
+            f"spark-submit --master '{SPARK_MASTER_URL}' {SPARK_PACKAGES_ARG} '{ROOT / 'spark_layer.py'}' "
             "--mode transform"
         ),
     )
@@ -69,7 +76,7 @@ with DAG(
     load_postgres = BashOperator(
         task_id="load_to_postgres",
         bash_command=(
-            f"spark-submit --packages '{SPARK_PACKAGES}' '{ROOT / 'spark_layer.py'}' "
+            f"spark-submit --master '{SPARK_MASTER_URL}' {SPARK_PACKAGES_ARG} '{ROOT / 'spark_layer.py'}' "
             "--mode load-postgres"
         ),
     )

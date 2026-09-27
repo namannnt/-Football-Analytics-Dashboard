@@ -44,10 +44,7 @@ SELECT
     away_team,
     CAST(home_goals AS INT) AS home_goals,
     CAST(away_goals AS INT) AS away_goals
-FROM hive_db.matches_raw
-WHERE CAST(matchday AS INT) IS NOT NULL
-  AND CAST(home_goals AS INT) IS NOT NULL
-  AND CAST(away_goals AS INT) IS NOT NULL
+FROM hive_db.match_history
 """
 
 

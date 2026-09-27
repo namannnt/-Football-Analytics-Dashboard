@@ -1,0 +1,165 @@
+name: football-analytics
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-football}
+      POSTGRES_USER: ${POSTGRES_USER:-football}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-football_dev_only}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  hdfs:
+    build:
+      context: .
+      dockerfile: infra/hadoop/Dockerfile
+    hostname: hdfs
+    ports:
+      - "9000:9000"
+      - "9864:9864"
+      - "9870:9870"
+    volumes:
+      - hdfs_name:/data/name
+      - hdfs_data:/data/data
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  hive-metastore:
+    image: apache/hive:4.0.1
+    environment:
+      SERVICE_NAME: metastore
+      HIVE_CUSTOM_CONF_DIR: /hive_custom_conf
+    volumes:
+      - ./infra/hive/conf:/hive_custom_conf:ro
+      - hive_metastore:/opt/hive/metastore_db
+    depends_on:
+      hdfs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9083'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  hive-server:
+    image: apache/hive:4.0.1
+    environment:
+      SERVICE_NAME: hiveserver2
+      HIVE_CUSTOM_CONF_DIR: /hive_custom_conf
+    volumes:
+      - ./infra/hive/conf:/hive_custom_conf:ro
+    ports:
+      - "10000:10000"
+      - "10002:10002"
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "beeline -u 'jdbc:hive2://localhost:10000/default' -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: infra/spark/Dockerfile
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["/opt/spark/sbin/start-master.sh --host spark-master && tail -F /opt/spark/logs/*"]
+    environment:
+      SPARK_NO_DAEMONIZE: "false"
+    volumes:
+      - ./infra/spark/conf:/opt/spark/conf:ro
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: infra/spark/Dockerfile
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -F /opt/spark/logs/*"]
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: 2g
+    volumes:
+      - ./infra/spark/conf:/opt/spark/conf:ro
+    depends_on:
+      - spark-master
+
+  airflow:
+    build:
+      context: .
+      dockerfile: infra/airflow/Dockerfile
+    command: standalone
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags/repo
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/dags/repo
+      FOOTBALL_DATASET: ${FOOTBALL_DATASET:-demo}
+      FOOTBALL_LANDING_MODE: ${FOOTBALL_LANDING_MODE:-hdfs}
+      FOOTBALL_HDFS_RAW_ROOT: ${FOOTBALL_HDFS_RAW_ROOT:-hdfs:///football/raw}
+      FOOTBALL_CURATED_PATH: ${FOOTBALL_CURATED_PATH:-hdfs:///football/curated}
+      FOOTBALL_DAG_SCHEDULE: ${FOOTBALL_DAG_SCHEDULE:-0 4 * * 1}
+      FOOTBALL_MODEL_PATH: /opt/airflow/dags/repo/artifacts/on_pace.joblib
+      FOOTBALL_MODEL_METADATA_PATH: /opt/airflow/dags/repo/artifacts/on_pace.metadata.json
+      HIVE_JDBC_URL: ${HIVE_JDBC_URL:-jdbc:hive2://hive-server:10000/default}
+      SPARK_MASTER_URL: ${SPARK_MASTER_URL:-spark://spark-master:7077}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-football}:${POSTGRES_PASSWORD:-football_dev_only}@postgres:5432/${POSTGRES_DB:-football}
+      POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-football}
+      POSTGRES_USER: ${POSTGRES_USER:-football}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-football_dev_only}
+    volumes:
+      - ./:/opt/airflow/dags/repo
+      - airflow_home:/opt/airflow
+    ports:
+      - "8088:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hive-server:
+        condition: service_healthy
+      spark-worker:
+        condition: service_started
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: infra/airflow/Dockerfile
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["python -m streamlit run /workspace/app.py --server.address=0.0.0.0 --server.port=8501"]
+    environment:
+      PYTHONPATH: /workspace
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-football}:${POSTGRES_PASSWORD:-football_dev_only}@postgres:5432/${POSTGRES_DB:-football}
+    volumes:
+      - ./:/workspace:ro
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  airflow_home:
+  hdfs_data:
+  hdfs_name:
+  hive_metastore:
+  postgres_data:

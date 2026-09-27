@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<configuration>
+  <property><name>hive.metastore.uris</name><value>thrift://hive-metastore:9083</value></property>
+  <property><name>hive.metastore.warehouse.dir</name><value>hdfs://hdfs:9000/user/hive/warehouse</value></property>
+  <property><name>hive.metastore.warehouse.external.dir</name><value>hdfs://hdfs:9000/user/hive/external</value></property>
+  <property><name>hive.server2.authentication</name><value>NONE</value></property>
+  <property><name>hive.execution.engine</name><value>mr</value></property>
+</configuration>
