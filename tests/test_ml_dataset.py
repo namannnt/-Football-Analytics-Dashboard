@@ -8,6 +8,7 @@ from ml_dataset import (
     chronological_split,
     final_season_labels,
 )
+from pace_inference import latest_first_half_observations
 
 
 def test_team_level_contract_has_two_rows_per_fixture(demo_matches):
@@ -30,3 +31,27 @@ def test_chronological_split_holds_out_newest_season(demo_matches):
     assert set(testing.season) == {"2025-demo"}
     assert training.matchday.max() == 5
     assert testing.matchday.max() == 5
+
+
+def test_chronological_split_normalizes_numeric_seasons(demo_matches):
+    numeric = demo_matches.copy()
+    numeric["season"] = numeric["season"].str[:4].astype(int)
+    training, testing = chronological_split(build_ml_dataset(numeric))
+    assert set(training.season) == {2023, 2024}
+    assert set(testing.season) == {2025}
+    assert not set(training.season).intersection(testing.season)
+
+
+def test_latest_inference_normalizes_numeric_seasons(demo_matches):
+    numeric = demo_matches.copy()
+    numeric["season"] = numeric["season"].str[:4].astype(int)
+    features = build_ml_dataset(numeric)
+    latest = latest_first_half_observations(features)
+    assert set(latest.season) == {2025}
+    assert latest.matchday.max() == 5
+
+
+def test_latest_inference_preserves_descriptive_and_demo_seasons(demo_matches):
+    features = build_ml_dataset(demo_matches)
+    latest = latest_first_half_observations(features)
+    assert set(latest.season) == {"2025-demo"}

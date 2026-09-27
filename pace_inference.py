@@ -9,7 +9,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from db import engine, query
-from ml_dataset import MODEL_FEATURES
+from ml_dataset import MODEL_FEATURES, normalize_season
 from model import load_model, score_on_pace
 
 
@@ -17,6 +17,18 @@ PREDICTION_COLUMNS = [
     "season", "matchday", "team", "on_pace_probability", "pace_status", "model_version", "generated_at"
 ]
 ROOT = Path(__file__).resolve().parent
+
+
+def latest_first_half_observations(features: pd.DataFrame) -> pd.DataFrame:
+    """Select the latest season's first-half rows using normalized season keys."""
+    keyed = features.assign(_season_key=features.season.map(normalize_season))
+    season_dates = keyed.groupby("_season_key").kickoff_ts.min().sort_values()
+    if season_dates.empty:
+        return keyed.drop(columns="_season_key")
+    latest_season = season_dates.index[-1]
+    eligible = keyed[keyed._season_key == latest_season]
+    eligible = eligible[eligible.season_progress < 0.5]
+    return eligible.drop(columns="_season_key")
 
 
 def _ensure_table() -> None:
@@ -46,10 +58,7 @@ def score_pace_model(**_context) -> dict[str, object]:
     features = query("SELECT * FROM analytics.team_prematch_features")
     if features.empty:
         return {"status": "skipped", "reason": "no feature rows are available"}
-    season_dates = features.groupby("season").kickoff_ts.min().sort_values()
-    latest_season = season_dates.index[-1]
-    eligible = features[features.season.astype(str) == latest_season].copy()
-    eligible = eligible[eligible.season_progress < 0.5]
+    eligible = latest_first_half_observations(features)
     latest = eligible.sort_values(["matchday", "kickoff_ts", "match_id"]).groupby("team", as_index=False).tail(1)
     if latest.empty:
         return {"status": "skipped", "reason": "no first-half observations are available"}

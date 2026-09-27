@@ -1,6 +1,7 @@
 FROM eclipse-temurin:11-jre-jammy
 
-ARG HADOOP_VERSION=3.3.6
+# Match the Hadoop client bundled into the Airflow/Spark image.
+ARG HADOOP_VERSION=3.4.1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl procps \
     && curl -fsSL "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz" \

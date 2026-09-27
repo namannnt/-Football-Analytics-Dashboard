@@ -17,6 +17,15 @@ MODEL_FEATURES = NUMERIC_FEATURES
 TARGET = "on_pace"
 
 
+def normalize_season(value: object) -> str:
+    """Return one stable comparison key for numeric and descriptive seasons."""
+    if pd.isna(value):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
 def final_season_labels(matches: pd.DataFrame) -> pd.DataFrame:
     """Label top-half finishers using final points, goal difference, then goals scored."""
     matches = matches.copy()
@@ -64,12 +73,15 @@ def first_half_observations(dataset: pd.DataFrame) -> pd.DataFrame:
 
 def chronological_split(dataset: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     first_half = first_half_observations(dataset)
-    season_dates = first_half.groupby("season").kickoff_ts.min().sort_values()
+    first_half = first_half.assign(_season_key=first_half.season.map(normalize_season))
+    season_dates = first_half.groupby("_season_key").kickoff_ts.min().sort_values()
     seasons = season_dates.index.tolist()
     if len(seasons) < 2:
         raise ValueError("Chronological evaluation requires at least two seasons")
     test_season = seasons[-1]
-    return first_half[first_half.season.astype(str) != test_season], first_half[first_half.season.astype(str) == test_season]
+    training = first_half[first_half._season_key != test_season].drop(columns="_season_key")
+    testing = first_half[first_half._season_key == test_season].drop(columns="_season_key")
+    return training, testing
 
 
 def read_serving_matches() -> pd.DataFrame:

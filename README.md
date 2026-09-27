@@ -114,6 +114,8 @@ Output is written under ignored `build/raw/` paths using the same schemas consum
 
 ## Hive and Spark flow
 
+The local stack pins PostgreSQL 16, Hadoop 3.4.1, Hive 4.0.1, Spark 4.0.0, and Java 17 for the Airflow/Spark image. The HDFS image uses Java 11 for the Hadoop daemon, while the Spark 4 runtime uses Java 17 as required by Spark 4. Hadoop 3.4.1 is used consistently by the HDFS image and the Airflow-side clients. Spark is configured for the Hive 4.0.1 metastore through `spark.sql.hive.metastore.version`. This is a reproducible demo matrix; the services still use single-node local containers.
+
 The DAG executes the Hive scripts individually:
 
 - `hive_queries/external_raw_tables.hql` defines CSV-backed external tables.
