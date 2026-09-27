@@ -121,6 +121,7 @@ services:
       FOOTBALL_DAG_SCHEDULE: ${FOOTBALL_DAG_SCHEDULE:-0 4 * * 1}
       FOOTBALL_MODEL_PATH: /opt/airflow/dags/repo/artifacts/on_pace.joblib
       FOOTBALL_MODEL_METADATA_PATH: /opt/airflow/dags/repo/artifacts/on_pace.metadata.json
+      FOOTBALL_SEASON_MATCHDAYS: ${FOOTBALL_SEASON_MATCHDAYS:-10}
       HIVE_JDBC_URL: ${HIVE_JDBC_URL:-jdbc:hive2://hive-server:10000/default}
       SPARK_MASTER_URL: ${SPARK_MASTER_URL:-spark://spark-master:7077}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-football}:${POSTGRES_PASSWORD:-football_dev_only}@postgres:5432/${POSTGRES_DB:-football}

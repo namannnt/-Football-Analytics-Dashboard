@@ -133,7 +133,7 @@ def normalize_matches(source: Path, target: Path, strict: bool) -> dict[str, int
     required = MATCH_COLUMNS if strict else ("home_team", "away_team", "home_goals", "away_goals")
     columns = _validate_headers(source, MATCH_ALIASES, required, "match")
     written = rejected = 0
-    seen_ids: set[str] = set()
+    seen_ids: set[tuple[str, str]] = set()
     generated_occurrences: dict[str, int] = {}
     with target.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
@@ -160,9 +160,10 @@ def normalize_matches(source: Path, target: Path, strict: bool) -> dict[str, int
                     raise ValueError(f"Invalid match row {row_number} in {source}: {detail}")
                 rejected += 1
                 continue
-            if values["match_id"] in seen_ids:
-                raise ValueError(f"Duplicate match_id {values['match_id']} in {source}")
-            seen_ids.add(values["match_id"])
+            identity = values["season"], values["match_id"]
+            if identity in seen_ids:
+                raise ValueError(f"Duplicate season/match_id {identity} in {source}")
+            seen_ids.add(identity)
             writer.writerow([values[name] for name in MATCH_COLUMNS])
             written += 1
     if not written:
@@ -177,7 +178,7 @@ def normalize_player_events(source: Path | None, target: Path, strict: bool) -> 
     required = PLAYER_MATCH_COLUMNS if strict else ("season", "matchday", "match_id", "player_name", "team", "minutes")
     columns = _validate_headers(source, EVENT_ALIASES, required, "player event")
     written = rejected = 0
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     with target.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         for row_number, row in enumerate(_read(source), 2):
@@ -196,7 +197,7 @@ def normalize_player_events(source: Path | None, target: Path, strict: bool) -> 
                     raise ValueError(f"Invalid player event row {row_number} in {source}: {detail}")
                 rejected += 1
                 continue
-            identity = values["match_id"], values["player_id"]
+            identity = values["season"], values["match_id"], values["player_id"]
             if identity in seen:
                 raise ValueError(f"Duplicate player appearance {identity} in {source}")
             seen.add(identity)
@@ -234,6 +235,27 @@ def normalize_profiles(source: Path | None, event_source: Path | None, target: P
     return count
 
 
+def validate_event_relationships(matches: Path, events: Path) -> None:
+    """Ensure every player appearance refers to one of that fixture's two teams."""
+    with matches.open(encoding="utf-8", newline="") as handle:
+        fixtures = {
+            (row[0], row[2]): {row[4], row[5]}
+            for row in csv.reader(handle)
+            if row
+        }
+    with events.open(encoding="utf-8", newline="") as handle:
+        for row_number, row in enumerate(csv.reader(handle), 1):
+            if not row:
+                continue
+            identity = row[0], row[2]
+            if identity not in fixtures:
+                raise ValueError(f"Player event row {row_number} references unknown fixture {identity}")
+            if row[5] not in fixtures[identity]:
+                raise ValueError(
+                    f"Player event row {row_number} team {row[5]} is not in fixture {identity}"
+                )
+
+
 def _hdfs_land(local: Path, remote: str) -> None:
     executable = os.getenv("HADOOP_FS_BIN", "hdfs")
     subprocess.run([executable, "dfs", "-mkdir", "-p", remote.rsplit("/", 1)[0]], check=True)
@@ -264,6 +286,8 @@ def ingest_raw_data(dataset: str | None = None, landing_mode: str | None = None,
         match_counts = normalize_matches(sources.matches, matches, sources.strict)
         event_counts = normalize_player_events(sources.player_events, events, sources.strict)
         profile_count = normalize_profiles(sources.player_profiles, sources.player_events, players)
+        if event_counts["written"]:
+            validate_event_relationships(matches, events)
         separator = "/" if landing_mode == "hdfs" else os.sep
 
         def target(*parts: str) -> str:

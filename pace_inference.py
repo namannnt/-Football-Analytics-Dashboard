@@ -9,6 +9,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from db import engine, query
+from ml_dataset import MODEL_FEATURES
 from model import load_model, score_on_pace
 
 
@@ -45,14 +46,16 @@ def score_pace_model(**_context) -> dict[str, object]:
     features = query("SELECT * FROM analytics.team_prematch_features")
     if features.empty:
         return {"status": "skipped", "reason": "no feature rows are available"}
-    latest_season = sorted(features.season.astype(str).unique())[-1]
+    season_dates = features.groupby("season").kickoff_ts.min().sort_values()
+    latest_season = season_dates.index[-1]
     eligible = features[features.season.astype(str) == latest_season].copy()
-    maximum_day = eligible.matchday.max()
-    eligible = eligible[eligible.matchday <= int(maximum_day / 2)]
+    eligible = eligible[eligible.season_progress < 0.5]
     latest = eligible.sort_values(["matchday", "kickoff_ts", "match_id"]).groupby("team", as_index=False).tail(1)
     if latest.empty:
         return {"status": "skipped", "reason": "no first-half observations are available"}
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("features") != MODEL_FEATURES:
+        raise ValueError("Model metadata feature contract does not match the current application")
     scored = score_on_pace(load_model(str(model_path)), latest)
     predictions = scored[["season", "matchday", "team", "on_pace_probability", "pace_status"]].copy()
     predictions["model_version"] = metadata["model_version"]

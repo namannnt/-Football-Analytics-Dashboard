@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from features import build_team_prematch_features
 
@@ -43,3 +44,10 @@ def test_matchup_history_excludes_current_fixture(demo_matches):
     pair = pair.sort_values("matchday")
     assert pd.isna(pair.iloc[0].matchup_points)
     assert not pd.isna(pair.iloc[1].matchup_points)
+
+
+def test_expected_season_length_controls_live_progress(demo_matches):
+    features = build_team_prematch_features(demo_matches, expected_matchdays=20)
+    assert features.loc[features.matchday == 5, "season_progress"].eq(0.2).all()
+    with pytest.raises(ValueError, match="expected_matchdays"):
+        build_team_prematch_features(demo_matches, expected_matchdays=9)

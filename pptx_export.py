@@ -4,7 +4,7 @@ from __future__ import annotations
 from io import BytesIO
 
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Pt
 
 
 def build_pptx(title: str, takeaways: list[str]) -> bytes:

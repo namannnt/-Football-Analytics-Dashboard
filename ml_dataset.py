@@ -1,13 +1,14 @@
 """Build the documented team-level ML contract and PostgreSQL feature table."""
 from __future__ import annotations
 
+import os
 import pandas as pd
 
 from db import engine, query
 from features import build_team_prematch_features
 
 
-IDENTIFIERS = ["season", "matchday", "match_id", "team", "opponent", "venue"]
+IDENTIFIERS = ["season", "matchday", "match_id", "kickoff_ts", "team", "opponent", "venue"]
 NUMERIC_FEATURES = [
     "form_points", "form_goal_diff", "elo_rating", "opponent_elo", "elo_delta",
     "matchup_points", "home_advantage", "season_progress",
@@ -58,13 +59,13 @@ def build_ml_dataset(matches: pd.DataFrame) -> pd.DataFrame:
 
 
 def first_half_observations(dataset: pd.DataFrame) -> pd.DataFrame:
-    maximum = dataset.groupby("season").matchday.transform("max")
-    return dataset[dataset.matchday <= (maximum / 2).apply(int)].copy()
+    return dataset[dataset.season_progress < 0.5].copy()
 
 
 def chronological_split(dataset: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     first_half = first_half_observations(dataset)
-    seasons = sorted(first_half.season.astype(str).unique())
+    season_dates = first_half.groupby("season").kickoff_ts.min().sort_values()
+    seasons = season_dates.index.tolist()
     if len(seasons) < 2:
         raise ValueError("Chronological evaluation requires at least two seasons")
     test_season = seasons[-1]
@@ -80,7 +81,11 @@ def read_serving_matches() -> pd.DataFrame:
 
 
 def build_and_store_ml_features(**_context) -> int:
-    feature_rows = build_team_prematch_features(read_serving_matches())
+    configured_length = os.getenv("FOOTBALL_SEASON_MATCHDAYS")
+    expected_matchdays = int(configured_length) if configured_length else None
+    feature_rows = build_team_prematch_features(
+        read_serving_matches(), expected_matchdays=expected_matchdays
+    )
     with engine().begin() as connection:
         feature_rows.to_sql("team_prematch_features", connection, schema="analytics", if_exists="replace", index=False)
     return len(feature_rows)

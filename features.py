@@ -17,6 +17,7 @@ def _validated_matches(matches: pd.DataFrame) -> pd.DataFrame:
     data = matches.copy()
     for column in ("matchday", "home_goals", "away_goals"):
         data[column] = pd.to_numeric(data[column], errors="raise")
+    data["kickoff_ts"] = pd.to_datetime(data.kickoff_ts, errors="raise", utc=True)
     if data.match_id.duplicated().any():
         duplicate = data.loc[data.match_id.duplicated(), "match_id"].iloc[0]
         raise ValueError(f"Duplicate match_id: {duplicate}")
@@ -72,9 +73,17 @@ def _pre_match_elo(long: pd.DataFrame, initial: float = 1500.0, k: float = 20.0)
     return output
 
 
-def build_team_prematch_features(matches: pd.DataFrame, form_window: int = 5) -> pd.DataFrame:
+def build_team_prematch_features(
+    matches: pd.DataFrame,
+    form_window: int = 5,
+    expected_matchdays: int | None = None,
+) -> pd.DataFrame:
     """Return one row per team and fixture using information available before kickoff."""
     data = _validated_matches(matches)
+    if expected_matchdays is not None and (
+        expected_matchdays <= 0 or data.matchday.max() > expected_matchdays
+    ):
+        raise ValueError("expected_matchdays must be positive and at least the largest observed matchday")
     long = _long_results(data)
     team_history = long.groupby(["season", "team"], sort=False)
     long["form_points"] = team_history.points.transform(
@@ -86,7 +95,11 @@ def build_team_prematch_features(matches: pd.DataFrame, form_window: int = 5) ->
     long["elo_rating"] = _pre_match_elo(long)
     matchup_history = long.groupby(["season", "team", "opponent"], sort=False).points
     long["matchup_points"] = matchup_history.transform(lambda values: values.shift().expanding().mean())
-    season_last_day = long.groupby("season").matchday.transform("max")
+    season_last_day = (
+        pd.Series(expected_matchdays, index=long.index)
+        if expected_matchdays is not None
+        else long.groupby("season").matchday.transform("max")
+    )
     long["season_progress"] = (long.matchday - 1) / season_last_day.clip(lower=1)
     long["home_advantage"] = (long.venue == "home").astype(int)
 

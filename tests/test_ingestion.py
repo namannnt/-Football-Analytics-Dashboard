@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from contracts import MATCH_COLUMNS, PLAYER_MATCH_COLUMNS
-from ingest_raw_data import normalize_matches, normalize_player_events
+from ingest_raw_data import normalize_matches, normalize_player_events, validate_event_relationships
 
 
 def write_csv(path: Path, headers, rows) -> None:
@@ -58,3 +58,21 @@ def test_player_event_contract_and_duplicate_guard(tmp_path):
     write_csv(source, PLAYER_MATCH_COLUMNS, [row, row])
     with pytest.raises(ValueError, match="Duplicate player appearance"):
         normalize_player_events(source, target, strict=True)
+
+
+def test_same_match_id_is_allowed_in_different_seasons(tmp_path):
+    source, target = tmp_path / "matches.csv", tmp_path / "out.csv"
+    rows = [
+        ["2024", 1, "m1", "2024-01-01", "A", "B", 1, 0],
+        ["2025", 1, "m1", "2025-01-01", "A", "B", 0, 1],
+    ]
+    write_csv(source, MATCH_COLUMNS, rows)
+    assert normalize_matches(source, target, strict=True)["written"] == 2
+
+
+def test_event_team_must_belong_to_referenced_fixture(tmp_path):
+    matches, events = tmp_path / "matches.csv", tmp_path / "events.csv"
+    write_csv(matches, [], [["demo", 1, "m1", "2026-01-01", "A", "B", 1, 0]])
+    write_csv(events, [], [["demo", 1, "m1", "p1", "Player", "C", 90, 0, 0, 1, 1, 20]])
+    with pytest.raises(ValueError, match="is not in fixture"):
+        validate_event_relationships(matches, events)
