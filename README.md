@@ -235,7 +235,7 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements-test.txt
-pytest -m "not integration"
+python -m pytest -m "not integration"
 ```
 
 Run compilation and the full suite, including the expected integration skip when no stack is active:
@@ -248,7 +248,7 @@ pytest
 After the Docker DAG has succeeded, opt into the database smoke test from the host:
 
 ```bash
-RUN_DISTRIBUTED_E2E=1 pytest -m integration
+RUN_DISTRIBUTED_E2E=1 python -m pytest -m integration
 ```
 
 GitHub Actions runs the unit subset on Python 3.11. It does not start Hadoop, Hive, Spark, or PostgreSQL.
