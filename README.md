@@ -67,6 +67,14 @@ The included match CSV has results but no season, date, or matchday fields. Inge
 
 The original single-file prototype remains in [`final.py`](final.py) for comparison.
 
+The Streamlit tabs expose the pacing trend, normalized standings radar, metric distributions, correlation heatmap, and Welch group comparison. The statistical view reports sample sizes, means, mean difference, t-statistic, p-value, and Cohen's d while keeping statistical and practical significance separate.
+
+Power BI extracts are an explicit CLI operation rather than a scheduled pipeline side effect:
+
+```bash
+python powerbi_dataset.py --output powerbi --format parquet
+```
+
 ### Model training and inference
 
 [`ml_dataset.py`](ml_dataset.py) converts fixtures into one observation per team before each kickoff. Form, ELO, opponent ELO, prior matchup record, venue, and season progress use only results available before that fixture. A team is labelled `On-Pace` when it finishes in the top half of its season table, ordered by final points, goal difference, goals scored, and team name.

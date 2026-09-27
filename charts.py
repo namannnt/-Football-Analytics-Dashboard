@@ -18,7 +18,15 @@ def correlation_heatmap(data, metrics: list[str]):
 
 
 def radar_comparison(data, entity: str, metrics: list[str]):
+    normalized = data.copy()
+    for metric in metrics:
+        low, high = normalized[metric].min(), normalized[metric].max()
+        normalized[metric] = 0.5 if high == low else (normalized[metric] - low) / (high - low)
     figure = go.Figure()
-    for _, row in data.iterrows():
-        figure.add_trace(go.Scatterpolar(r=[row[m] for m in metrics], theta=metrics, fill="toself", name=str(row[entity])))
+    for _, row in normalized.iterrows():
+        values = [row[metric] for metric in metrics]
+        figure.add_trace(go.Scatterpolar(
+            r=[*values, values[0]], theta=[*metrics, metrics[0]], fill="toself", name=str(row[entity])
+        ))
+    figure.update_layout(polar={"radialaxis": {"visible": True, "range": [0, 1]}})
     return figure

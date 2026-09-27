@@ -12,8 +12,12 @@ def compare_groups(data: pd.DataFrame, metric: str, group: str, a: str, b: str) 
     if min(len(left), len(right)) < 2:
         raise ValueError("Each comparison group needs at least two observations")
     statistic, p_value = stats.ttest_ind(left, right, equal_var=False)
-    pooled = np.sqrt(((left.var(ddof=1) + right.var(ddof=1)) / 2))
-    effect = (left.mean() - right.mean()) / pooled if pooled else 0.0
+    pooled_variance = (
+        ((len(left) - 1) * left.var(ddof=1) + (len(right) - 1) * right.var(ddof=1))
+        / (len(left) + len(right) - 2)
+    )
+    pooled = np.sqrt(pooled_variance)
+    effect = (left.mean() - right.mean()) / pooled if pooled and np.isfinite(pooled) else 0.0
     return {
         "group_a": a, "group_b": b, "n_a": len(left), "n_b": len(right),
         "mean_a": left.mean(), "mean_b": right.mean(), "mean_difference": left.mean() - right.mean(),
