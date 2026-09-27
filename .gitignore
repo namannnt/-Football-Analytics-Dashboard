@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .streamlit/
 artifacts/
+build/
 powerbi/
 spark-warehouse/
 metastore_db/
